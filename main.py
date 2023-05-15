@@ -16,9 +16,14 @@ from pyatv.interface import Playing, PushListener
 from pyatv.const import Protocol
 from pyatv.conf import BaseConfig
 from pyatv.helpers import is_streamable
+from pyatv.protocols.raop.audio_source import ReaderWrapper
+from miniaudio import StreamableSource
 
 chunk_size = 1024
 LOOP = asyncio.get_event_loop()
+
+# Create my own wrapper for the audio buffer
+    
 
 async def create_process(cmd, *args):
     process = await asp.create_subprocess_exec(
@@ -75,32 +80,33 @@ async def stream_with_push_updates(
     atv.push_updater.listener = listener
     atv.push_updater.start()
 
-    filename = f"{conf.identifier}.mp3"
-    process = await create_process("./snapclient.sh", f"--player file --logsink null")# f'snapclient -h {conf.address} --player file --logsink stderr')
-    await asyncio.sleep(5)
-    c = await process.stdout.read(1)
+    # filename = f"{conf.identifier}.mp3"
+    # process = await create_process("./snapclient.sh", f"--player file --logsink null")# f'snapclient -h {conf.address} --player file --logsink stderr')
+    await asyncio.sleep(3)
+    # c = await process.stdout.read(1)
     try:
-        print("* Starting to stream", filename)
+        print("* Starting to stream")
         # Holy shit it works, just really badly
         # Maybe instead of exporting to a file and reading the file in a loop, I can feed the atv stream file a bufferedreader and keep filling it between loops
-        while c:
-          c = await process.stdout.read(1024 * 1024 * 100)
-          audio_segment = AudioSegment(
-              c,
-              frame_rate=44100,  # Replace with the appropriate sample rate
-              sample_width=2,    # Replace with the appropriate sample width in bytes
-              channels=2         # Replace with the appropriate number of channels
-          )
-          export = audio_segment.export(filename)
+        # while process:
+          # c = await process.stdout.read(1024 * 1024 * 100)
+          # audio_segment = AudioSegment(
+          #     c,
+          #     frame_rate=44100,  # Replace with the appropriate sample rate
+          #     sample_width=2,    # Replace with the appropriate sample width in bytes
+          #     channels=2         # Replace with the appropriate number of channels
+          # )
+          # export = audio_segment.export(filename)
           # buffer = io.BytesIO(c)
           # buffered = io.BufferedReader(buffer)
           # await atv.stream.stream_file(buffered)
-          await atv.stream.stream_file(export)
+        await atv.stream.stream_file('http://localhost:8080/stream')
+        # await atv.stream.stream_file('https://www.kozco.com/tech/LRMonoPhase4.mp3')
           # if await is_streamable(export):
           #     await atv.stream.stream_file(export)
           # else:
           #     print(f"File is not streamable\n{filename} {export}")
-          await asyncio.sleep(0.01)
+        await asyncio.sleep(0.01)
     except Exception as e:
         print(e)
     finally:
