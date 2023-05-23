@@ -1,3 +1,4 @@
+aiofiles==23.1.0
 aiohttp==3.8.4
 aiosignal==1.3.1
 async-timeout==4.0.2
@@ -7,29 +8,21 @@ certifi==2023.5.7
 cffi==1.15.1
 chacha20poly1305-reuseable==0.2.5
 charset-normalizer==3.1.0
-click==8.1.3
-colorama==0.4.6
 cryptography==40.0.2
 frozenlist==1.3.3
 idna==3.4
 ifaddr==0.2.0
-markdown-it-py==2.2.0
-mdurl==0.1.2
 mediafile==0.11.0
 miniaudio==1.57
 multidict==6.0.4
 mutagen==1.46.0
 protobuf==4.23.0
-pyatv==0.10.3
+pyatv @ git+https://github.com/postlund/pyatv.git@898a889812ef22e6a7c72514f2ed4e84e8e823a9
 pycparser==2.21
-Pygments==2.15.1
+pydub==0.25.1
 requests==2.30.0
-rich==13.3.5
-shellingham==1.5.0.post1
 six==1.16.0
 srptools==1.0.1
-typer==0.9.0
-typing_extensions==4.5.0
 urllib3==2.0.2
 yarl==1.9.2
 zeroconf==0.62.0

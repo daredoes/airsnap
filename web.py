@@ -1,5 +1,7 @@
 import asyncio
+import asyncio.subprocess as asp
 from aiohttp import WSMsgType, web
+from pyatv.const import Protocol
 import pyatv
 
 PAGE = """
@@ -32,6 +34,11 @@ socket.onerror = function(error) {
 """
 
 routes = web.RouteTableDef()
+
+async def create_process(cmd, *args):
+    process = await asp.create_subprocess_exec(
+        cmd, stdin=None, stdout=asp.PIPE, stderr=None, *args)
+    return process
 
 
 class DeviceListener(pyatv.interface.DeviceListener, pyatv.interface.PushListener):
@@ -84,7 +91,7 @@ async def state(request):
     )
 
 
-@routes.get("/")
+@routes.get("/scan")
 async def scan(request):
     results = await pyatv.scan(loop=asyncio.get_event_loop())
     output = "\n\n".join(str(result) for result in results)
@@ -109,6 +116,8 @@ async def connect(request):
     except Exception as ex:
         return web.Response(text=f"Failed to connect to device: {ex}", status=500)
 
+    process = await create_process(f'/Users/dare/Python/airsnap/venv/bin/python', f'/Users/dare/Python/airsnap/test.py', f'{device_id}')
+    request.app["processes"][device_id] = process
     listener = DeviceListener(request.app, device_id)
     atv.listener = listener
     atv.push_updater.listener = listener
@@ -139,9 +148,28 @@ async def playing(request, atv):
     return web.Response(text=str(status))
 
 
+@routes.get("/volume/{id}/{level}")
+@web_command
+async def set_volume(request, atv):
+    loop = asyncio.get_event_loop()
+    device_id = request.match_info["id"]
+    volume = request.match_info["level"]
+    if device_id in request.app["atv"]:
+        device = request.app["atv"][device_id]
+        asyncio.ensure_future(device.audio.set_volume(float(volume)))
+        return web.Response(text=f"Already connected to {device_id}")
+
+    return web.Response(text=f"Volume command failed", status=500)
+
 @routes.get("/close/{id}")
 @web_command
 async def close_connection(request, atv):
+    device_id = request.match_info["id"]
+    try:
+        process = request.app["processes"][device_id]
+        process.terminate()
+    except Exception as ex:
+        return web.Response(text=f"Close command failed: {ex}")
     atv.close()
     return web.Response(text="OK")
 
@@ -173,6 +201,12 @@ async def websocket_handler(request, pyatv):
 
 async def on_shutdown(app: web.Application) -> None:
     for atv in app["atv"].values():
+        for p in app.get("processes", {}).values():
+            try:
+                print("killing", p)
+                p.terminate()
+            except:
+                pass
         atv.close()
 
 
@@ -181,6 +215,7 @@ def main():
     print("loading app")
     app["atv"] = {}
     app["listeners"] = []
+    app["processes"] = {}
     app["clients"] = {}
     print('adding routes')
     app.add_routes(routes)

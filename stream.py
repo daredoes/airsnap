@@ -11,7 +11,7 @@ async def stream_pcm(request):
     resp.content_type = 'audio/mpeg'  # You might need to adjust the content type depending on your specific needs
 
     await resp.prepare(request)
-    process = await create_process("./snapclient.sh", '--hostID 123456')
+    process = await create_process("./snapclient.sh")
 
     while True:
         data = await process.stdout.read(4096)
