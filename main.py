@@ -1,13 +1,11 @@
-"""Example of streaming a file and printing status updates.
+"""Find devices on the network, and pick one to start streaming snapclient to
 
-python stream.py 10.0.0.4 file.mp3
+python test.py
 """
 
 import asyncio
 import asyncio.subprocess as asp
 import sys
-import io
-from pydub import AudioSegment
 
 
 from typing import List
@@ -15,19 +13,18 @@ import pyatv
 from pyatv.interface import Playing, PushListener
 from pyatv.const import Protocol
 from pyatv.conf import BaseConfig
-from pyatv.helpers import is_streamable
-from pyatv.protocols.raop.audio_source import ReaderWrapper
-from miniaudio import StreamableSource
+from pyatv.support.metadata import AudioMetadata
+import os
 
 chunk_size = 1024
 LOOP = asyncio.get_event_loop()
 
-# Create my own wrapper for the audio buffer
+# Create my own wrapper for the audio buffer?
     
 
-async def create_process(cmd, *args):
+async def create_process(cmd, *args, **kwargs):
     process = await asp.create_subprocess_exec(
-        cmd, stdin=None, stdout=asp.PIPE, stderr=None, *args)
+        cmd, stdin=None, stdout=asp.PIPE, stderr=None, env=kwargs.get('env'), *args)
     return process
 
 def handle_device(device: BaseConfig):
@@ -68,7 +65,7 @@ async def pair(conf: BaseConfig, loop: asyncio.AbstractEventLoop):
     await pairing.close()
 
 async def stream_with_push_updates(
-    conf: BaseConfig, filename: str, loop: asyncio.AbstractEventLoop
+    conf: BaseConfig, loop: asyncio.AbstractEventLoop, instance: int = 1,
 ):
     """Find a device and print what is playing."""
     print("* Connecting to", conf.address)
@@ -80,32 +77,15 @@ async def stream_with_push_updates(
     atv.push_updater.listener = listener
     atv.push_updater.start()
 
-    # filename = f"{conf.identifier}.mp3"
-    # process = await create_process("./snapclient.sh", f"--player file --logsink null")# f'snapclient -h {conf.address} --player file --logsink stderr')
-    await asyncio.sleep(3)
-    # c = await process.stdout.read(1)
+    process_env = os.environ.copy()
+    process_env['AIRPLAY_ID'] = conf.identifier
+    process = await create_process(f"./run.sh", f"--hostID", f"{conf.identifier}",  f"-i", f"{instance}", kwargs={
+        "env": process_env
+    })
     try:
         print("* Starting to stream")
-        # Holy shit it works, just really badly
-        # Maybe instead of exporting to a file and reading the file in a loop, I can feed the atv stream file a bufferedreader and keep filling it between loops
-        # while process:
-          # c = await process.stdout.read(1024 * 1024 * 100)
-          # audio_segment = AudioSegment(
-          #     c,
-          #     frame_rate=44100,  # Replace with the appropriate sample rate
-          #     sample_width=2,    # Replace with the appropriate sample width in bytes
-          #     channels=2         # Replace with the appropriate number of channels
-          # )
-          # export = audio_segment.export(filename)
-          # buffer = io.BytesIO(c)
-          # buffered = io.BufferedReader(buffer)
-          # await atv.stream.stream_file(buffered)
-        await atv.stream.stream_file('http://localhost:8080/stream')
-        # await atv.stream.stream_file('https://www.kozco.com/tech/LRMonoPhase4.mp3')
-          # if await is_streamable(export):
-          #     await atv.stream.stream_file(export)
-          # else:
-          #     print(f"File is not streamable\n{filename} {export}")
+        # metadata: AudioMetadata = AudioMetadata("Snapcast", "Snapcast", "Snapcast")
+        await atv.stream.stream_file(process.stdout)
         await asyncio.sleep(0.01)
     except Exception as e:
         print(e)
@@ -113,7 +93,8 @@ async def stream_with_push_updates(
         atv.close()
 
 async def scan(
-    loop: asyncio.AbstractEventLoop
+    loop: asyncio.AbstractEventLoop,
+    identifer: str = None
 ):
     """Find a device and print what is playing."""
     print("* Discovering devices on network...")
@@ -127,13 +108,20 @@ async def scan(
     if not devices:
         print("* No Valid Devices found", file=sys.stderr)
         return
-    await select_to_stream(devices, loop)
+    selected_device = await select_to_stream(devices, loop, identifier=identifer)
+    await stream_with_push_updates(selected_device, loop)
     return devices
 async def select_to_stream(
     devices: List[BaseConfig],
-    loop: asyncio.AbstractEventLoop
+    loop: asyncio.AbstractEventLoop,
+    identifier: str = None
 ):
     """Find a device and print what is playing."""
+    known_device = filter(lambda x: x.identifier == identifier, devices)
+    if known_device:
+        print("Found desired device")
+        for d in known_device:
+            return d
     for i, device in enumerate(devices, start=1):
         print(f"{i}: {device.name} {device.device_info.model}, address: {device.address}")
     selection = -1
@@ -148,9 +136,11 @@ async def select_to_stream(
     
     device = devices[selection]
 
-    await stream_with_push_updates(device, '/Users/dare/Python/airsnap/tmp/stream.mp3', loop)
+    return device
+
+    
 
 
 
 if __name__ == "__main__":
-    LOOP.run_until_complete(scan(LOOP))
+    LOOP.run_until_complete(scan(LOOP, sys.argv[1]))

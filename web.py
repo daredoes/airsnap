@@ -94,7 +94,10 @@ async def state(request):
 @routes.get("/scan")
 async def scan(request):
     results = await pyatv.scan(loop=asyncio.get_event_loop())
-    output = "\n\n".join(str(result) for result in results)
+    if results:
+        output = "\n\n".join(str(result) for result in results)
+    else:
+        output = "No devices found"
     return web.Response(text=output)
 
 
@@ -116,7 +119,7 @@ async def connect(request):
     except Exception as ex:
         return web.Response(text=f"Failed to connect to device: {ex}", status=500)
 
-    process = await create_process(f'/Users/dare/Python/airsnap/venv/bin/python', f'/Users/dare/Python/airsnap/test.py', f'{device_id}')
+    process = await create_process(f'python', f'/main.py', f'{device_id}')
     request.app["processes"][device_id] = process
     listener = DeviceListener(request.app, device_id)
     atv.listener = listener
