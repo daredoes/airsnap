@@ -9,9 +9,9 @@ while (( "$#" )); do
     shift
   fi
 done
-cp mixer.sh $hostID.sh
+cp mixer.sh mixer_$hostID.sh
 #sed -i "s/hostID=\"\"/hostID=\"$hostID\"/g" "$hostID.sh"
-perl -pi -e "s/hostID=\"\"/hostID=\"$hostID\"/g" "$hostID.sh"
+perl -pi -e "s/hostID=\"\"/hostID=\"$hostID\"/g" "mixer_$hostID.sh"
 
 chmod +x $hostID.sh
-snapclient -h 192.168.1.104 --logsink null --player file  --sampleformat 44100:16:* --mixer script:./$hostID.sh --hostID $hostID $@ | ffmpeg -f u16le -acodec pcm_s16le -ac 2 -ar 44100 -i pipe:0 -f mp3 pipe:1 
+snapclient -h 192.168.1.104 --logsink null --player file  --sampleformat 44100:16:* --mixer script:./mixer_$hostID.sh --hostID $hostID $@ | ffmpeg -f u16le -acodec pcm_s16le -ac 2 -ar 44100 -i pipe:0 -f mp3 pipe:1 

@@ -3,7 +3,11 @@ import asyncio.subprocess as asp
 from aiohttp import WSMsgType, web
 from pyatv.const import Protocol
 import pyatv
+import json
+import os
+import pathlib
 
+file_path = pathlib.Path(os.path.realpath(__file__)).parent
 PAGE = """
 <script>
 let socket = new WebSocket('ws://' + location.host + '/ws/DEVICE_ID');
@@ -119,7 +123,8 @@ async def connect(request):
     except Exception as ex:
         return web.Response(text=f"Failed to connect to device: {ex}", status=500)
 
-    process = await create_process(f'python', f'/main.py', f'{device_id}')
+    
+    process = await create_process(f'python', f'{file_path}/main.py', f'{device_id}')
     request.app["processes"][device_id] = process
     listener = DeviceListener(request.app, device_id)
     atv.listener = listener
@@ -128,7 +133,38 @@ async def connect(request):
     request.app["listeners"].append(listener)
 
     request.app["atv"][device_id] = atv
+    save_processes_to_settings(request.app)
     return web.Response(text=f"Connected to device {device_id}")
+
+async def connect_and_create(app: web.Application, device_id: str, query: any = None) -> bool:
+    loop = asyncio.get_event_loop()
+    if device_id in app["atv"]:
+        return False
+
+    results = await pyatv.scan(identifier=device_id, loop=loop)
+    if not results:
+        return False
+
+    if query is None:
+        query = {}
+    add_credentials(results[0], query)
+
+    try:
+        atv = await pyatv.connect(results[0], loop=loop)
+    except Exception as ex:
+        return False
+
+    process = await create_process(f'python', f'{file_path}/main.py', f'{device_id}')
+    app["processes"][device_id] = process
+    listener = DeviceListener(app, device_id)
+    atv.listener = listener
+    atv.push_updater.listener = listener
+    atv.push_updater.start()
+    app["listeners"].append(listener)
+
+    app["atv"][device_id] = atv
+    save_processes_to_settings(app)
+    return True
 
 
 @routes.get("/remote_control/{id}/{command}")
@@ -201,15 +237,45 @@ async def websocket_handler(request, pyatv):
 
     return ws
 
+def save_processes_to_settings(app: web.Application) -> bool:
+    try:
+        running = list(app.get("processes", {}).keys())
+        data = {'ids': running}
+        print(f"Dumping {data}")
+        with open('settings.json', 'w') as f:
+            json.dump(data, f)
+        return True
+    except:
+        return False
+
+def load_device_ids() -> list:
+    try:
+        with open('settings.json', 'r') as f:
+            data = json.load(f)
+            print(f"Got settings {data}")
+            return data.get('ids', [])
+    except:
+        print("Failed to load existing ids")
+        return []
+
+async def on_startup(app: web.Application) -> None:
+    device_ids = load_device_ids()
+    for device_id in device_ids:
+        print(f"Connecting to {device_id}")
+        await connect_and_create(app, device_id)
+        
 
 async def on_shutdown(app: web.Application) -> None:
+    save_processes_to_settings(app)
+    for device_id in app.get("processes", {}).keys():
+        p = app['processes'][device_id]
+        try:
+            print("killing", p)
+            p.terminate()
+        except Exception as e:
+            print(f"Couldn't kill the process for {device_id}", e)
+        
     for atv in app["atv"].values():
-        for p in app.get("processes", {}).values():
-            try:
-                print("killing", p)
-                p.terminate()
-            except:
-                pass
         atv.close()
 
 
@@ -222,6 +288,7 @@ def main():
     app["clients"] = {}
     print('adding routes')
     app.add_routes(routes)
+    app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
     web.run_app(app, host='0.0.0.0', port=8080)
 

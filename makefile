@@ -6,7 +6,6 @@ run:
 	docker run -d \
     -p 8080:8080 \
     -h airsnap \
-		--net=host \
     -v /Users/dare/Git/airsnap/tmp:/home \
     $(DOCKER_REPO)/$(DOCKER_IMAGE)
 
