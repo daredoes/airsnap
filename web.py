@@ -10,6 +10,22 @@ from pyatv import Protocol
 file_path = pathlib.Path(os.path.realpath(__file__)).parent
 routes = web.RouteTableDef()
 
+HOMEPAGE_START = """
+    <html>
+        <body>
+"""
+HOMEPAGE_END = """
+        </body>
+    </html>
+"""
+
+def make_page(content):
+    return f"""
+    {HOMEPAGE_START}
+    {content}
+    {HOMEPAGE_END}
+    """
+
 async def create_process(cmd, *args):
     process = await asp.create_subprocess_exec(
         cmd, stdin=None, stdout=asp.PIPE, stderr=None, *args)
@@ -63,12 +79,13 @@ def add_credentials(config, query):
 
 @routes.get("/")
 async def scan(request):
+    running_devices = list(request.app["processes"].keys())
     results = await pyatv.scan(loop=asyncio.get_event_loop(), protocol=Protocol.RAOP)
     if results:
-        output = "\n\n".join(str(result) for result in results)
+        output = "<br/>".join(f"<a href='{result.identifier}{'/close' if result.identifier in running_devices else ''}'>{'Stop' if result.identifier in running_devices else 'Start'} {result.name}</a><br/>" for result in results)
     else:
         output = "No devices found"
-    return web.Response(text=output)
+    return web.Response(text=output, content_type="text/html")
 
 
 @routes.get("/{id}")
