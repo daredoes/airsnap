@@ -149,7 +149,7 @@ async def connect_and_create(app: web.Application, device_id: str, query: any = 
     save_processes_to_settings(app)
     return True
 
-@routes.get("/{id}/{level}")
+@routes.get("/{id}/volume/{level}")
 @web_command
 async def set_volume(request, atv):
     device_id = request.match_info["id"]
