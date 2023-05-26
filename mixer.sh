@@ -29,4 +29,4 @@ fi
 volume=$(echo "scale=0; $volume * 100 / 1" | bc)
 
 # Adjust this URL based on your requirements
-curl -s -o /dev/null "http://localhost:8080/$hostID/$volume"
+curl -s -o /dev/null "http://localhost:$PORT/$hostID/$volume"

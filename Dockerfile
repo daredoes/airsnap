@@ -8,4 +8,6 @@ COPY main.py /
 COPY run.sh /
 COPY mixer.sh /
 RUN chmod +x main.py run.sh web.py mixer.sh
+ENV PORT=8080
+ENV SNAPCAST_SERVER=snapcast.local
 ENTRYPOINT ["python", "/web.py"]

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Initialize parameters
 hostID="1234567890"
-server=""
+server="-h $SNAPCAST_SERVER"
 while (( "$#" )); do
   if [[ $1 == "--hostID" ]]; then
     hostID="$2"
