@@ -6,15 +6,13 @@ python test.py
 import asyncio
 import asyncio.subprocess as asp
 import sys
-
+import json
 
 from typing import List
 import pyatv
 from pyatv.interface import Playing, PushListener
-from pyatv.const import Protocol
+from pyatv.const import Protocol, PairingRequirement
 from pyatv.conf import BaseConfig
-from pyatv.support.metadata import AudioMetadata
-import os
 
 chunk_size = 1024
 LOOP = asyncio.get_event_loop()
@@ -48,6 +46,14 @@ class PushUpdatePrinter(PushListener):
 
 
 async def pair(conf: BaseConfig, loop: asyncio.AbstractEventLoop):
+    credentials = load_credentials()
+    saved_credentials = credentials[conf.identifier]
+    if saved_credentials:
+        # Find device and restore credentials
+        atvs = pyatv.scan(loop, identifier=conf.identifier, protocol=Protocol.RAOP)
+        atv = atvs[0]
+        atv.set_credentials(Protocol.RAOP, saved_credentials)
+        return True
     pairing = await pyatv.pair(conf, Protocol.RAOP, loop)
     await pairing.begin()
 
@@ -64,27 +70,35 @@ async def pair(conf: BaseConfig, loop: asyncio.AbstractEventLoop):
 
     await pairing.close()
 
+def load_credentials():
+    data = {}
+    with open('credentials.json', 'r') as f:
+        data = json.load(f)
+    return data
+
+def save_credentials(identifier: str, credentials: str):
+    data = load_credentials()
+    data[identifier] = credentials
+    with open('credentials.json', 'w') as f:
+        json.dump(data, f, indent=4, sort_keys=True)
+    return True
+
 async def stream_with_push_updates(
     conf: BaseConfig, loop: asyncio.AbstractEventLoop, instance: int = 1,
 ):
     """Find a device and print what is playing."""
     print("* Connecting to", conf.address)
     
-    # await pair(conf, loop)
     atv = await pyatv.connect(conf, loop)
-
+    if atv.service.credentials:
+        save_credentials(atv.service.identifier, atv.service.credentials)
     listener = PushUpdatePrinter()
     atv.push_updater.listener = listener
     atv.push_updater.start()
 
-    process_env = os.environ.copy()
-    process_env['AIRPLAY_ID'] = conf.identifier
-    process = await create_process(f"./run.sh", f"--hostID", f"{conf.identifier}",  f"-i", f"{instance}", kwargs={
-        "env": process_env
-    })
+    process = await create_process(f"./run.sh", f"--hostID", f"{conf.identifier}",  f"-i", f"{instance}")
     try:
         print("* Starting to stream")
-        # metadata: AudioMetadata = AudioMetadata("Snapcast", "Snapcast", "Snapcast")
         await atv.stream.stream_file(process.stdout)
         await asyncio.sleep(0.01)
     except Exception as e:
@@ -109,6 +123,13 @@ async def scan(
         print("* No Valid Devices found", file=sys.stderr)
         return
     selected_device = await select_to_stream(devices, loop, identifier=identifer)
+    pairing_mode = selected_device.services[0].pairing
+    if pairing_mode == PairingRequirement.Optional or pairing_mode == PairingRequirement.Mandatory:
+        try:
+            print("* Attempting to pair to", selected_device.address)
+            await pair(selected_device, loop)
+        except:
+            pass
     await stream_with_push_updates(selected_device, loop)
     return devices
 async def select_to_stream(
@@ -137,10 +158,6 @@ async def select_to_stream(
     device = devices[selection]
 
     return device
-
-    
-
-
 
 if __name__ == "__main__":
     LOOP.run_until_complete(scan(LOOP, sys.argv[1]))

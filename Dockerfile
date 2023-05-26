@@ -1,14 +1,11 @@
 FROM ghcr.io/postlund/pyatv:master
 
-RUN apk add git
+RUN apk add git snapcast perl ffmpeg bash curl
 COPY requirements.txt /
+RUN pip uninstall -y pyatv && pip install -r /requirements.txt
 COPY web.py /
-RUN chmod +x web.py
 COPY main.py /
-RUN chmod +x main.py
 COPY run.sh /
-RUN chmod +x run.sh
 COPY mixer.sh /
-RUN chmod +x mixer.sh
-RUN pip install -r /requirements.txt
+RUN chmod +x main.py run.sh web.py mixer.sh
 ENTRYPOINT ["python", "/web.py"]

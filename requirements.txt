@@ -17,7 +17,7 @@ miniaudio==1.57
 multidict==6.0.4
 mutagen==1.46.0
 protobuf==4.23.0
-pyatv @ git+https://github.com/postlund/pyatv.git@898a889812ef22e6a7c72514f2ed4e84e8e823a9
+pyatv @ git+https://github.com/postlund/pyatv.git@dcbf5817a4cbde554966466934bb1af4dfe38864
 pycparser==2.21
 pydub==0.25.1
 requests==2.30.0

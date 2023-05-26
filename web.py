@@ -1,42 +1,13 @@
 import asyncio
 import asyncio.subprocess as asp
 from aiohttp import WSMsgType, web
-from pyatv.const import Protocol
 import pyatv
 import json
 import os
 import pathlib
+from pyatv import Protocol
 
 file_path = pathlib.Path(os.path.realpath(__file__)).parent
-PAGE = """
-<script>
-let socket = new WebSocket('ws://' + location.host + '/ws/DEVICE_ID');
-
-socket.onopen = function(e) {
-  document.getElementById('status').innerText = 'Connected!';
-};
-
-socket.onmessage = function(event) {
-  document.getElementById('state').innerText = event.data;
-};
-
-socket.onclose = function(event) {
-  if (event.wasClean) {
-    document.getElementById('status').innerText = 'Connection closed cleanly!';
-  } else {
-    document.getElementById('status').innerText = 'Disconnected due to error!';
-  }
-  document.getElementById('state').innerText = "";
-};
-
-socket.onerror = function(error) {
-  document.getElementById('status').innerText = 'Failed to connect!';
-};
-</script>
-<div id="status">Connecting...</div>
-<div id="state"></div>
-"""
-
 routes = web.RouteTableDef()
 
 async def create_process(cmd, *args):
@@ -59,11 +30,14 @@ class DeviceListener(pyatv.interface.DeviceListener, pyatv.interface.PushListene
     def _remove(self):
         self.app["atv"].pop(self.identifier)
         self.app["listeners"].remove(self)
+        p = self.app['processes'].pop(self.identifier)
+        try:
+            p.terminate()
+        except:
+            pass
 
     def playstatus_update(self, updater, playstatus: pyatv.interface.Playing) -> None:
-        clients = self.app["clients"].get(self.identifier, [])
-        for client in clients:
-            asyncio.ensure_future(client.send_str(str(playstatus)))
+        pass
 
     def playstatus_error(self, updater, exception: Exception) -> None:
         pass
@@ -87,17 +61,9 @@ def add_credentials(config, query):
             config.set_credentials(service.protocol, query[proto_name])
 
 
-@routes.get("/state/{id}")
-async def state(request):
-    return web.Response(
-        text=PAGE.replace("DEVICE_ID", request.match_info["id"]),
-        content_type="text/html",
-    )
-
-
-@routes.get("/scan")
+@routes.get("/")
 async def scan(request):
-    results = await pyatv.scan(loop=asyncio.get_event_loop())
+    results = await pyatv.scan(loop=asyncio.get_event_loop(), protocol=Protocol.RAOP)
     if results:
         output = "\n\n".join(str(result) for result in results)
     else:
@@ -105,14 +71,14 @@ async def scan(request):
     return web.Response(text=output)
 
 
-@routes.get("/connect/{id}")
+@routes.get("/{id}")
 async def connect(request):
     loop = asyncio.get_event_loop()
     device_id = request.match_info["id"]
     if device_id in request.app["atv"]:
         return web.Response(text=f"Already connected to {device_id}")
 
-    results = await pyatv.scan(identifier=device_id, loop=loop)
+    results = await pyatv.scan(identifier=device_id, loop=loop, protocol=Protocol.RAOP)
     if not results:
         return web.Response(text="Device not found", status=500)
 
@@ -141,7 +107,7 @@ async def connect_and_create(app: web.Application, device_id: str, query: any = 
     if device_id in app["atv"]:
         return False
 
-    results = await pyatv.scan(identifier=device_id, loop=loop)
+    results = await pyatv.scan(identifier=device_id, loop=loop, protocol=Protocol.RAOP)
     if not results:
         return False
 
@@ -166,41 +132,17 @@ async def connect_and_create(app: web.Application, device_id: str, query: any = 
     save_processes_to_settings(app)
     return True
 
-
-@routes.get("/remote_control/{id}/{command}")
-@web_command
-async def remote_control(request, atv):
-    try:
-        await getattr(atv.remote_control, request.match_info["command"])()
-    except Exception as ex:
-        return web.Response(text=f"Remote control command failed: {ex}")
-    return web.Response(text="OK")
-
-
-@routes.get("/playing/{id}")
-@web_command
-async def playing(request, atv):
-    try:
-        status = await atv.metadata.playing()
-    except Exception as ex:
-        return web.Response(text=f"Remote control command failed: {ex}")
-    return web.Response(text=str(status))
-
-
-@routes.get("/volume/{id}/{level}")
+@routes.get("/{id}/{level}")
 @web_command
 async def set_volume(request, atv):
-    loop = asyncio.get_event_loop()
     device_id = request.match_info["id"]
     volume = request.match_info["level"]
-    if device_id in request.app["atv"]:
-        device = request.app["atv"][device_id]
-        asyncio.ensure_future(device.audio.set_volume(float(volume)))
-        return web.Response(text=f"Already connected to {device_id}")
+    device = request.app["atv"][device_id]
+    # print(f"Volume request {device_id} {volume}")
+    asyncio.ensure_future(device.audio.set_volume(float(volume)))
+    return web.Response(text=f"Volume command sent", status=200)
 
-    return web.Response(text=f"Volume command failed", status=500)
-
-@routes.get("/close/{id}")
+@routes.get("/{id}/close")
 @web_command
 async def close_connection(request, atv):
     device_id = request.match_info["id"]
@@ -212,30 +154,6 @@ async def close_connection(request, atv):
     atv.close()
     return web.Response(text="OK")
 
-
-@routes.get("/ws/{id}")
-@web_command
-async def websocket_handler(request, pyatv):
-    device_id = request.match_info["id"]
-
-    ws = web.WebSocketResponse()
-    await ws.prepare(request)
-    request.app["clients"].setdefault(device_id, []).append(ws)
-
-    playstatus = await pyatv.metadata.playing()
-    await ws.send_str(str(playstatus))
-
-    async for msg in ws:
-        if msg.type == WSMsgType.TEXT:
-            # Handle custom commands from client here
-            if msg.data == "close":
-                await ws.close()
-        elif msg.type == WSMsgType.ERROR:
-            print(f"Connection closed with exception: {ws.exception()}")
-
-    request.app["clients"][device_id].remove(ws)
-
-    return ws
 
 def save_processes_to_settings(app: web.Application) -> bool:
     try:
@@ -285,7 +203,6 @@ def main():
     app["atv"] = {}
     app["listeners"] = []
     app["processes"] = {}
-    app["clients"] = {}
     print('adding routes')
     app.add_routes(routes)
     app.on_startup.append(on_startup)
